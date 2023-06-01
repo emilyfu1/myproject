@@ -137,15 +137,11 @@ class Prepare_Correlations:
         # define the mask to set the values in the upper triangle to True
         mask = np.triu(np.ones_like(matrix, dtype=bool))
         heatmap = sb.heatmap(matrix, mask=mask, vmin=-1, vmax=1, annot=False, cmap='RdYlGn')
-        heatmap.set_title('Real GDP, HP filter', pad=16);
+        heatmap.set_title(self.detrending, pad=16);
 
     def get_organized(self):
         # import the correlation data (for now, use first differences)
         matrix = self.get_correlationmatrix()
-
-        # reset index in order to reshape
-        matrix = matrix.set_index(matrix.columns[0])
-        matrix.index.name = None
 
         # reshape the data
         matrix_reshape = matrix.stack().reset_index()
