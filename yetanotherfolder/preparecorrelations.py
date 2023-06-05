@@ -7,11 +7,18 @@ import pycountry
 import seaborn as sb
 import matplotlib.pyplot as plt
 
+def get_from_oecd(sdmx_query):
+    data = pd.read_csv(f"https://stats.oecd.org/SDMX-JSON/data/{sdmx_query}?contentType=csv")
+
+
 def mydateparser(dates):
     datestring = []
     for d in range(len(dates)):
-        new = dates[d][:4] + 'Q' + dates[d][4:]
-        datestring.append(new)
+        if 'Q' in str(dates[d]):
+            datestring.append(d)
+        else:
+            new = dates[d][:4] + 'Q' + dates[d][4:]
+            datestring.append(new)
         # print(new)
     return datestring
 
@@ -19,6 +26,7 @@ def fixCols(df, total_columns):
     df.columns = [country.split(": ",1)[0] for country in df.columns]
     df = df.drop(columns = [col for col in df if col not in total_columns])
     date_list = df["date"].values.tolist()
+    print(date_list)
     converted_dates = mydateparser([str(date) for date in date_list])
     df["date"] = pd.to_datetime(converted_dates)
     df = df.set_index("date")
@@ -95,10 +103,11 @@ class Prepare_Correlations:
         print("The included countries are: ", self.countries)
         print(self.data.head(10))
 
-    def detrend(self, start_date, end_date):
+    def detrend(self, start_date=None, end_date=None):
 
         # restrict dates as specified
-        self.data = self.data.loc[(self.data.index >= pd.to_datetime(start_date, format='%Y-%m-%d')) & (self.data.index <= pd.to_datetime(end_date, format='%Y-%m-%d'))]
+        if start_date != None and end_date != None:
+            self.data = self.data.loc[(self.data.index >= pd.to_datetime(start_date, format='%Y-%m-%d')) & (self.data.index <= pd.to_datetime(end_date, format='%Y-%m-%d'))]
 
         # restrict list of countries as specified
         self.data = self.data.drop(columns = [col for col in self.data if col not in self.countries], axis=1)
