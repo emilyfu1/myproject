@@ -7,15 +7,21 @@ import pycountry
 import seaborn as sb
 import matplotlib.pyplot as plt
 
+import requests
+
 def mydateparser(dates):
     datestring = []
     for d in range(len(dates)):
-        new = dates[d][:4] + 'Q' + dates[d][4:]
-        datestring.append(new)
+        if 'Q' in str(dates[d]):
+            datestring.append(d)
+        else:
+            new = dates[d][:4] + 'Q' + dates[d][4:]
+            datestring.append(new)
         # print(new)
     return datestring
 
-def fixCols(df, total_columns):
+def fixCols(df, countries):
+    total_columns = ['date'] + countries
     df.columns = [country.split(": ",1)[0] for country in df.columns]
     df = df.drop(columns = [col for col in df if col not in total_columns])
     date_list = df["date"].values.tolist()
@@ -79,6 +85,60 @@ def HPDetrend(df):
         df[country] = HP_cycle
     return df
 
+def get_from_oecd(sdmx_query):
+    data = pd.read_csv(f"https://stats.oecd.org/SDMX-JSON/data/{sdmx_query}?contentType=csv")[['LOCATION', 'TIME', 'Value']]
+    data.rename(columns={'TIME': 'date'}, inplace=True)
+    datawide = pd.pivot(data, index='date', columns='LOCATION', values='Value')
+    datawide = datawide.rename_axis(None, axis=1)
+    datawide.index = pd.to_datetime(datawide.index)
+
+    return datawide
+
+def get_from_imf(query_key):
+    url = 'http://dataservices.imf.org/REST/SDMX_JSON.svc/'
+
+    # Navigate to series in API-returned JSON data
+    data = (requests.get(f'{url}{query_key}').json()
+            ['CompactData']['DataSet']['Series'])
+
+    baseyr = data[0]['@BASE_YEAR']  # Save the base year
+
+    dates = []
+    iso2codes = []
+    values = []
+
+    for country in range(len(data)):
+        # Create pandas dataframe from the observations
+        for obs in data[country]['Obs']:
+            date = obs.get('@TIME_PERIOD')
+            iso2 = data[country]['@REF_AREA']
+            value = obs.get('@OBS_VALUE')
+
+            dates.append(date)
+            iso2codes.append(iso2)
+            values.append(value)
+        
+    df = pd.DataFrame(
+        {'date': dates,
+        'iso2': iso2codes,
+        'value': values
+        })
+
+    datawide = pd.pivot(df, index='date', columns='iso2', values='value')
+    datawide = datawide.rename_axis(None, axis=1)
+    datawide.index = pd.to_datetime(datawide.index)
+
+
+    countries = {}
+    for country in pycountry.countries:
+        countries[country.alpha_2] = country.alpha_3
+
+    datawide.columns = [countries.get(country, 'Unknown code') for country in datawide.columns]
+
+    datawide = datawide.apply(pd.to_numeric)
+
+    return datawide
+
 class Prepare_Correlations:
     def __init__(self, data, detrending, countries):
         # whatever measure of output is desired for use (we can use GDP, consumption industrial production, etc)
@@ -95,10 +155,11 @@ class Prepare_Correlations:
         print("The included countries are: ", self.countries)
         print(self.data.head(10))
 
-    def detrend(self, start_date, end_date):
+    def detrend(self, start_date=None, end_date=None):
 
         # restrict dates as specified
-        self.data = self.data.loc[(self.data.index >= pd.to_datetime(start_date, format='%Y-%m-%d')) & (self.data.index <= pd.to_datetime(end_date, format='%Y-%m-%d'))]
+        if start_date != None and end_date != None:
+            self.data = self.data.loc[(self.data.index >= pd.to_datetime(start_date, format='%Y-%m-%d')) & (self.data.index <= pd.to_datetime(end_date, format='%Y-%m-%d'))]
 
         # restrict list of countries as specified
         self.data = self.data.drop(columns = [col for col in self.data if col not in self.countries], axis=1)
