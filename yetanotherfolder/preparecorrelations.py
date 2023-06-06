@@ -7,9 +7,7 @@ import pycountry
 import seaborn as sb
 import matplotlib.pyplot as plt
 
-def get_from_oecd(sdmx_query):
-    data = pd.read_csv(f"https://stats.oecd.org/SDMX-JSON/data/{sdmx_query}?contentType=csv")
-
+import requests
 
 def mydateparser(dates):
     datestring = []
@@ -22,11 +20,11 @@ def mydateparser(dates):
         # print(new)
     return datestring
 
-def fixCols(df, total_columns):
+def fixCols(df, countries):
+    total_columns = ['date'] + countries
     df.columns = [country.split(": ",1)[0] for country in df.columns]
     df = df.drop(columns = [col for col in df if col not in total_columns])
     date_list = df["date"].values.tolist()
-    print(date_list)
     converted_dates = mydateparser([str(date) for date in date_list])
     df["date"] = pd.to_datetime(converted_dates)
     df = df.set_index("date")
@@ -86,6 +84,60 @@ def HPDetrend(df):
         # instead of rewriting the data, how do i save my output to a new dataframe (in the right corresponding location)?
         df[country] = HP_cycle
     return df
+
+def get_from_oecd(sdmx_query):
+    data = pd.read_csv(f"https://stats.oecd.org/SDMX-JSON/data/{sdmx_query}?contentType=csv")[['LOCATION', 'TIME', 'Value']]
+    data.rename(columns={'TIME': 'date'}, inplace=True)
+    datawide = pd.pivot(data, index='date', columns='LOCATION', values='Value')
+    datawide = datawide.rename_axis(None, axis=1)
+    datawide.index = pd.to_datetime(datawide.index)
+
+    return datawide
+
+def get_from_imf(query_key):
+    url = 'http://dataservices.imf.org/REST/SDMX_JSON.svc/'
+
+    # Navigate to series in API-returned JSON data
+    data = (requests.get(f'{url}{query_key}').json()
+            ['CompactData']['DataSet']['Series'])
+
+    baseyr = data[0]['@BASE_YEAR']  # Save the base year
+
+    dates = []
+    iso2codes = []
+    values = []
+
+    for country in range(len(data)):
+        # Create pandas dataframe from the observations
+        for obs in data[country]['Obs']:
+            date = obs.get('@TIME_PERIOD')
+            iso2 = data[country]['@REF_AREA']
+            value = obs.get('@OBS_VALUE')
+
+            dates.append(date)
+            iso2codes.append(iso2)
+            values.append(value)
+        
+    df = pd.DataFrame(
+        {'date': dates,
+        'iso2': iso2codes,
+        'value': values
+        })
+
+    datawide = pd.pivot(df, index='date', columns='iso2', values='value')
+    datawide = datawide.rename_axis(None, axis=1)
+    datawide.index = pd.to_datetime(datawide.index)
+
+
+    countries = {}
+    for country in pycountry.countries:
+        countries[country.alpha_2] = country.alpha_3
+
+    datawide.columns = [countries.get(country, 'Unknown code') for country in datawide.columns]
+
+    datawide = datawide.apply(pd.to_numeric)
+
+    return datawide
 
 class Prepare_Correlations:
     def __init__(self, data, detrending, countries):
